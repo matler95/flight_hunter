@@ -6,13 +6,16 @@ from datetime import datetime
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.db.database import SessionLocal
 from app.db.models import FlightOffer, PersistedFlightSegment, PriceHistory, Search, SearchRun
 from app.domain.enums import TicketType, VerificationStatus
+from app.domain.models import NormalizedFlightOffer
 from app.providers.discovery.google_flights import GoogleFlightsProvider
 from app.services.date_generator import generate_date_combinations
 from app.services.deduplicator import deduplicate, itinerary_key
 from app.services.notification_service import notify_if_eligible
+from app.services.verifier import FlightVerifier
 
 logger = logging.getLogger(__name__)
 _running_tasks: set[asyncio.Task] = set()
@@ -95,6 +98,7 @@ async def execute_run(run_id: int) -> None:
             session.commit()
 
         run.offers_found = len(discovered)
+        verification_candidates: list[tuple[FlightOffer, NormalizedFlightOffer]] = []
         for raw in deduplicate(discovered):
             if raw.stops > search.max_stops:
                 continue
@@ -113,7 +117,8 @@ async def execute_run(run_id: int) -> None:
                 stops=raw.stops,
                 stop_airports=",".join(segment.arrival_airport for segment in raw.segments[:-1]),
                 ticket_type=(TicketType.SELF_TRANSFER if raw.is_self_transfer else TicketType.UNKNOWN).value,
-                verification_status=VerificationStatus.UNKNOWN.value,
+                verification_status=VerificationStatus.DISCOVERED.value,
+                booking_source=None,
                 booking_url=raw.booking_url,
                 provider=raw.provider,
                 provider_offer_id=raw.provider_offer_id,
@@ -139,6 +144,27 @@ async def execute_run(run_id: int) -> None:
                     )
                 )
             session.add(PriceHistory(flight_offer_id=offer.id, price=raw.price, currency=raw.currency))
+            verification_candidates.append(
+                (
+                    offer,
+                    NormalizedFlightOffer(
+                        **raw.model_dump(),
+                        ticket_type=TicketType.SELF_TRANSFER if raw.is_self_transfer else TicketType.UNKNOWN,
+                    ),
+                )
+            )
+
+        verifier = FlightVerifier()
+        for offer, normalized in sorted(verification_candidates, key=lambda candidate: candidate[0].price)[
+            : settings.max_offers_to_verify
+        ]:
+            status, ticket_type, booking_source, booking_url = await verifier.verify(normalized, provider)
+            offer.verification_status = status.value
+            offer.ticket_type = ticket_type.value
+            offer.booking_source = booking_source
+            if booking_url:
+                offer.booking_url = booking_url
+            run.offers_verified += int(status is VerificationStatus.VERIFIED)
             try:
                 await notify_if_eligible(session, offer, search)
             except Exception as exc:

@@ -24,6 +24,11 @@ def ensure_additive_schema() -> None:
                 connection.execute(
                     text("ALTER TABLE searches ADD COLUMN schedule VARCHAR(20) NOT NULL DEFAULT 'manual'")
                 )
+    if "flight_offers" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("flight_offers")}
+        if "booking_source" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE flight_offers ADD COLUMN booking_source VARCHAR(80)"))
     if "search_runs" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("search_runs")}
         if "current_query" not in columns:

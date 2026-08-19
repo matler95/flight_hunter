@@ -62,6 +62,7 @@ class FlightOffer(Base):
     stop_airports: Mapped[str] = mapped_column(Text, default="")
     ticket_type: Mapped[str] = mapped_column(String(30), default="unknown")
     verification_status: Mapped[str] = mapped_column(String(20), default="discovered")
+    booking_source: Mapped[str | None] = mapped_column(String(80), nullable=True)
     booking_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider: Mapped[str] = mapped_column(String(50))
     provider_offer_id: Mapped[str] = mapped_column(String(160))
