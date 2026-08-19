@@ -1,0 +1,2 @@
+class AirlineVerificationProvider:
+    name = "airline"

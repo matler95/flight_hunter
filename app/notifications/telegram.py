@@ -1,0 +1,2 @@
+class TelegramNotificationChannel:
+    name = "telegram"
