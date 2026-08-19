@@ -1,5 +1,7 @@
-from typing import Protocol
+from abc import ABC, abstractmethod
 
 
-class NotificationChannel(Protocol):
-    def send(self, message: str) -> None: ...
+class NotificationProvider(ABC):
+    @abstractmethod
+    async def send_price_alert(self, message: str, booking_url: str | None = None) -> None:
+        """Deliver a price alert without logging credentials."""

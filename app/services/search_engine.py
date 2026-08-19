@@ -12,6 +12,7 @@ from app.domain.enums import TicketType, VerificationStatus
 from app.providers.discovery.google_flights import GoogleFlightsProvider
 from app.services.date_generator import generate_date_combinations
 from app.services.deduplicator import deduplicate, itinerary_key
+from app.services.notification_service import notify_if_eligible
 
 logger = logging.getLogger(__name__)
 _running_tasks: set[asyncio.Task] = set()
@@ -138,6 +139,10 @@ async def execute_run(run_id: int) -> None:
                     )
                 )
             session.add(PriceHistory(flight_offer_id=offer.id, price=raw.price, currency=raw.currency))
+            try:
+                await notify_if_eligible(session, offer, search)
+            except Exception as exc:
+                errors.append(f"notification offer={offer.id}: {type(exc).__name__}: {exc}")
         run.status = "completed"
         run.finished_at = datetime.now()
         run.current_query = ""

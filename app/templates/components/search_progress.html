@@ -1,0 +1,10 @@
+{% if run and run.status == 'running' %}
+<div id="search-progress" class="mt-6 rounded-lg border bg-white p-4" hx-get="/searches/{{ search.id }}/progress" hx-trigger="every 3s" hx-swap="outerHTML">
+  <div class="flex items-center justify-between"><strong>Searching…</strong><span>{{ run.combinations_checked }} / {{ run.combinations_total }} combinations</span></div>
+  <div class="mt-3 h-2 overflow-hidden rounded bg-slate-100"><div class="h-full bg-teal-700" style="width: {{ (100 * run.combinations_checked / run.combinations_total) if run.combinations_total else 0 }}%"></div></div>
+  <p class="mt-3 text-sm text-slate-500">Offers found: {{ run.offers_found }} · Verified: {{ run.offers_verified }}</p>
+  {% if run.current_query %}<p class="mt-1 text-sm text-slate-500">Current: {{ run.current_query }}</p>{% endif %}
+</div>
+{% elif run %}
+<div id="search-progress" class="mt-6 rounded-lg border bg-white p-4">✓ Search complete · {{ run.combinations_checked }} / {{ run.combinations_total }} combinations · {{ run.offers_found }} found · {{ run.offers_verified }} verified{% if run.errors %}<p class="mt-2 text-sm text-red-700">Some combinations failed. See history for recorded errors.</p>{% endif %}</div>
+{% endif %}

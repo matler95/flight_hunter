@@ -22,6 +22,7 @@ class Search(Base):
     currency: Mapped[str] = mapped_column(String(3), default="PLN")
     max_stops: Mapped[int] = mapped_column(Integer, default=1)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    schedule: Mapped[str] = mapped_column(String(20), default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     runs: Mapped[list["SearchRun"]] = relationship(back_populates="search", cascade="all,delete-orphan")

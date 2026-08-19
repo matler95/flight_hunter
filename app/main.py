@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,11 +9,9 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.db.database import Base, SessionLocal, engine
-from app.db.models import FlightOffer, PriceHistory, Search, SearchRun
-from app.domain.enums import TicketType, VerificationStatus
-from app.providers.discovery.google_flights import GoogleFlightsProvider
-from app.services.date_generator import generate_date_combinations
-from app.services.deduplicator import deduplicate, itinerary_key
+from app.db.models import FlightOffer, Search, SearchRun
+from app.scheduler.scheduler import sync_daily_jobs
+from app.services.search_engine import enqueue_run
 
 
 @asynccontextmanager
@@ -44,75 +41,6 @@ def get_search(search_id):
     return session, item
 
 
-async def execute(search_id):
-    session, search = get_search(search_id)
-    combos = list(
-        generate_date_combinations(
-            search.earliest_departure,
-            search.latest_departure,
-            search.min_trip_days,
-            search.max_trip_days,
-            search.latest_return,
-        )
-    )
-    run = SearchRun(search_id=search.id, combinations_total=len(combos))
-    session.add(run)
-    session.commit()
-    session.refresh(run)
-    provider = GoogleFlightsProvider()
-    all_offers = []
-    errors = []
-    for departure, returning in combos:
-        try:
-            all_offers.extend(
-                await provider.search(search.origin, search.destination, departure, returning, search.currency)
-            )
-        except Exception as exc:
-            errors.append(str(exc))
-        run.combinations_checked += 1
-        session.commit()
-    unique = deduplicate(all_offers)
-    run.offers_found = len(all_offers)
-    for raw in unique:
-        if raw.stops > search.max_stops:
-            continue
-        # Discovery cannot prove ticketing; false self-transfer is not proof of one ticket.
-        ticket = TicketType.SELF_TRANSFER if raw.is_self_transfer else TicketType.UNKNOWN
-        status = VerificationStatus.UNKNOWN
-        key = itinerary_key(raw)
-        offer = FlightOffer(
-            search_run_id=run.id,
-            departure_date=raw.departure.date(),
-            return_date=raw.return_date,
-            trip_days=(raw.return_date - raw.departure.date()).days,
-            origin=raw.origin,
-            destination=raw.destination,
-            airline=raw.airlines[0],
-            price=raw.price,
-            currency=raw.currency,
-            total_duration_minutes=raw.duration_minutes,
-            stops=raw.stops,
-            stop_airports=",".join(s.arrival_airport for s in raw.segments[:-1]),
-            ticket_type=ticket.value,
-            verification_status=status.value,
-            booking_url=raw.booking_url,
-            provider=raw.provider,
-            provider_offer_id=raw.provider_offer_id,
-            identity_key=key,
-            route=" → ".join([raw.origin] + [s.arrival_airport for s in raw.segments]),
-        )
-        session.add(offer)
-        session.flush()
-        session.add(PriceHistory(flight_offer_id=offer.id, price=raw.price, currency=raw.currency))
-        run.offers_verified += int(status == VerificationStatus.VERIFIED)
-    run.status = "completed"
-    run.finished_at = datetime.now()
-    run.errors = "\n".join(errors)
-    search.last_run_at = datetime.now()
-    session.commit()
-    session.close()
-
-
 @app.get("/", response_class=HTMLResponse)
 @app.get("/searches", response_class=HTMLResponse)
 def dashboard(request: Request):
@@ -139,6 +67,7 @@ async def create_search(
     target_price: Decimal = Form(...),
     currency: str = Form("PLN"),
     max_stops: int = Form(1),
+    schedule: str = Form("manual"),
 ):
     session = db()
     search = Search(
@@ -153,13 +82,15 @@ async def create_search(
         target_price=target_price,
         currency=currency.upper(),
         max_stops=max_stops,
+        schedule=schedule if schedule in {"manual", "daily"} else "manual",
     )
     session.add(search)
     session.commit()
     session.refresh(search)
     sid = search.id
     session.close()
-    await execute(sid)
+    sync_daily_jobs()
+    enqueue_run(sid)
     return RedirectResponse(f"/searches/{sid}", 303)
 
 
@@ -182,7 +113,7 @@ def results(request: Request, search_id: int):
 
 @app.post("/searches/{search_id}/run")
 async def run(search_id: int):
-    await execute(search_id)
+    enqueue_run(search_id)
     return RedirectResponse(f"/searches/{search_id}", 303)
 
 
@@ -221,6 +152,13 @@ def flight(request: Request, offer_id: int):
     return templates.TemplateResponse(request, "flight_detail.html", {"offer": offer, "history": offer.prices})
 
 
+@app.get("/searches/{search_id}/progress", response_class=HTMLResponse)
+def progress_fragment(request: Request, search_id: int):
+    session, search = get_search(search_id)
+    run = session.scalar(select(SearchRun).where(SearchRun.search_id == search_id).order_by(SearchRun.id.desc()))
+    return templates.TemplateResponse(request, "components/search_progress.html", {"search": search, "run": run})
+
+
 @app.get("/api/searches/{search_id}/progress")
 def progress(search_id: int):
     session, item = get_search(search_id)
@@ -235,6 +173,7 @@ def progress(search_id: int):
             "total": run.combinations_total,
             "offers_found": run.offers_found,
             "verified": run.offers_verified,
+            "current_query": run.current_query,
         },
     }
 
