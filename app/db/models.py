@@ -39,6 +39,7 @@ class SearchRun(Base):
     offers_found: Mapped[int] = mapped_column(Integer, default=0)
     offers_verified: Mapped[int] = mapped_column(Integer, default=0)
     errors: Mapped[str] = mapped_column(Text, default="")
+    current_query: Mapped[str] = mapped_column(Text, default="")
     search: Mapped[Search] = relationship(back_populates="runs")
     offers: Mapped[list["FlightOffer"]] = relationship(back_populates="run", cascade="all,delete-orphan")
 
@@ -68,6 +69,24 @@ class FlightOffer(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     run: Mapped[SearchRun] = relationship(back_populates="offers")
     prices: Mapped[list["PriceHistory"]] = relationship(back_populates="offer", cascade="all,delete-orphan")
+    segments: Mapped[list["PersistedFlightSegment"]] = relationship(back_populates="offer", cascade="all,delete-orphan")
+
+
+class PersistedFlightSegment(Base):
+    __tablename__ = "flight_segments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flight_offer_id: Mapped[int] = mapped_column(ForeignKey("flight_offers.id"))
+    segment_number: Mapped[int] = mapped_column(Integer)
+    direction: Mapped[str] = mapped_column(String(10))
+    flight_number: Mapped[str] = mapped_column(String(20))
+    marketing_airline: Mapped[str] = mapped_column(String(10))
+    operating_airline: Mapped[str] = mapped_column(String(10))
+    departure_airport: Mapped[str] = mapped_column(String(3))
+    arrival_airport: Mapped[str] = mapped_column(String(3))
+    departure_time: Mapped[datetime] = mapped_column(DateTime)
+    arrival_time: Mapped[datetime] = mapped_column(DateTime)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    offer: Mapped[FlightOffer] = relationship(back_populates="segments")
 
 
 class PriceHistory(Base):

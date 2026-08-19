@@ -12,7 +12,7 @@ from sqlalchemy import select
 from app.db.database import Base, SessionLocal, engine
 from app.db.models import FlightOffer, PriceHistory, Search, SearchRun
 from app.domain.enums import TicketType, VerificationStatus
-from app.providers.discovery.mock import MockFlightProvider
+from app.providers.discovery.google_flights import GoogleFlightsProvider
 from app.services.date_generator import generate_date_combinations
 from app.services.deduplicator import deduplicate, itinerary_key
 
@@ -59,7 +59,7 @@ async def execute(search_id):
     session.add(run)
     session.commit()
     session.refresh(run)
-    provider = MockFlightProvider()
+    provider = GoogleFlightsProvider()
     all_offers = []
     errors = []
     for departure, returning in combos:
@@ -76,18 +76,15 @@ async def execute(search_id):
     for raw in unique:
         if raw.stops > search.max_stops:
             continue
-        ticket = TicketType.SINGLE_TICKET if raw.is_self_transfer is False else TicketType.UNKNOWN
-        status = (
-            VerificationStatus.VERIFIED
-            if raw.provider == "mock" and ticket == TicketType.SINGLE_TICKET
-            else VerificationStatus.UNKNOWN
-        )
+        # Discovery cannot prove ticketing; false self-transfer is not proof of one ticket.
+        ticket = TicketType.SELF_TRANSFER if raw.is_self_transfer else TicketType.UNKNOWN
+        status = VerificationStatus.UNKNOWN
         key = itinerary_key(raw)
         offer = FlightOffer(
             search_run_id=run.id,
             departure_date=raw.departure.date(),
-            return_date=next(r for d, r in combos if d == raw.departure.date()),
-            trip_days=(next(r for d, r in combos if d == raw.departure.date()) - raw.departure.date()).days,
+            return_date=raw.return_date,
+            trip_days=(raw.return_date - raw.departure.date()).days,
             origin=raw.origin,
             destination=raw.destination,
             airline=raw.airlines[0],
@@ -244,4 +241,4 @@ def progress(search_id: int):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "data": {"provider": "mock/offline", "database": "ok"}}
+    return {"status": "ok", "data": {"provider": "google_flights_fli", "database": "ok"}}

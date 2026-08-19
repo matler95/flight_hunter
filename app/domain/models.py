@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -25,10 +25,12 @@ class RawFlightOffer(BaseModel):
     origin: str
     destination: str
     departure: datetime
+    return_date: date
     arrival: datetime
     duration_minutes: int
     stops: int
     segments: list[FlightSegment] = Field(default_factory=list)
+    outbound_segment_count: int = 0
     airlines: list[str] = Field(default_factory=list)
     booking_url: str | None = None
     is_self_transfer: bool | None = None

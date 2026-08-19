@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/flight_hunter.db"
     default_currency: str = "PLN"
     provider_min_interval_seconds: float = 10
+    provider_results_per_query: int = 10
     max_offers_to_verify: int = 10
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

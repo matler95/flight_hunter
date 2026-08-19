@@ -34,6 +34,7 @@ def test_deduplication_keeps_lower_price():
         origin="WAW",
         destination="NRT",
         departure=seg.departure_time,
+        return_date=seg.departure_time.date(),
         arrival=seg.arrival_time,
         duration_minutes=600,
         stops=0,

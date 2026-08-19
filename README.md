@@ -1,6 +1,6 @@
 # Flight Hunter
 
-Local, single-user flight discovery and price tracking. The MVP ships with a deterministic mock provider so it is fully usable and testable without internet access. Discovered offers and verified single-ticket offers are visibly distinct.
+Local, single-user flight discovery and price tracking using the open-source [`flights` / fli](https://github.com/punitarani/fli) package. It performs low-volume Google Flights searches locally; no paid API, proxy rotation, browser automation, CAPTCHA bypass, or credentials are used.
 
 ## Install
 
@@ -11,7 +11,7 @@ make migrate
 make dev
 ```
 
-Open http://127.0.0.1:8000. Create a search, for example `WAW` to `TYO`; airport group `TYO` resolves to a concrete Tokyo arrival airport in the mock provider.
+Open http://127.0.0.1:8000. Create a search such as `WAW` to `TYO`; the application resolves `TYO` to `HND` and `NRT`, then stores the concrete arrival airport returned by Google Flights.
 
 ## Commands
 
@@ -21,10 +21,14 @@ make lint
 make format
 ```
 
-## Provider and verification
+## Provider safety
 
-The default provider is `MockFlightProvider`. `GoogleFlightsProvider` is deliberately only an adapter boundary until a reviewed `fli`/`gfly` integration is configured. It does not scrape, bypass CAPTCHA, rotate proxies, or fabricate availability. Airline verification returns `UNKNOWN` unless it can reliably confirm a single protected ticket.
+The application serializes provider requests and waits `PROVIDER_MIN_INTERVAL_SECONDS` between them. A provider failure is recorded against the search run and does not stop the remaining date combinations. Fli is an unofficial, reverse-engineered Google Flights client, so availability can change.
 
-## Telegram
+## Verification and alerts
 
-Create a bot with BotFather, message it once, then put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`. Tokens are never stored in the database. The notification adapter is reserved for verified, single-ticket, below-target offers.
+Discovery is intentionally not verification. Offers are shown as `UNKNOWN` until a reliable adapter establishes that the complete itinerary is a single protected ticket. Telegram alerts are consequently disabled until that verifier is implemented; the app must never send an alert based only on a discovered price.
+
+## Telegram configuration
+
+When verification support is enabled, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to `.env`. Tokens are never stored in SQLite.
