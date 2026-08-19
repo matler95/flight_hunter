@@ -1,5 +1,8 @@
-from typing import Protocol
+from abc import ABC, abstractmethod
+
+from app.domain.models import NormalizedFlightOffer, VerificationResult
 
 
-class VerificationProvider(Protocol):
-    def verify(self, flight: object) -> object: ...
+class FlightVerificationProvider(ABC):
+    @abstractmethod
+    async def verify(self, offer: NormalizedFlightOffer) -> VerificationResult: ...

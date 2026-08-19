@@ -1,10 +1,11 @@
-.PHONY: install run test
-
-install:
-	python -m pip install -e ".[test]"
-
-run:
-	uvicorn app.main:app --reload
-
+.PHONY: dev test lint format migrate
+dev:
+	uv run uvicorn app.main:app --reload
 test:
-	pytest
+	uv run pytest
+lint:
+	uv run ruff check .
+format:
+	uv run ruff format .
+migrate:
+	uv run python -c "from app.db.database import Base, engine; import app.db.models; Base.metadata.create_all(engine)"
