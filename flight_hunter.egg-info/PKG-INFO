@@ -13,3 +13,4 @@ Requires-Dist: pydantic-settings>=2.6
 Requires-Dist: httpx>=0.27
 Requires-Dist: apscheduler>=3.10
 Requires-Dist: python-multipart>=0.0.12
+Requires-Dist: flights>=0.9.0

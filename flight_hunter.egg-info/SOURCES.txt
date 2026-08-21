@@ -28,6 +28,7 @@ app/providers/discovery/mock.py
 app/providers/verification/airline.py
 app/providers/verification/base.py
 app/scheduler/scheduler.py
+app/services/airports.py
 app/services/date_generator.py
 app/services/deduplicator.py
 app/services/normalizer.py
