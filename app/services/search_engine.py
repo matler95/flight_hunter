@@ -1,4 +1,12 @@
-"""Background orchestration for real, low-volume flight searches."""
+"""Background orchestration for a single search run.
+
+Flow (see plan §35): load search -> generate date combinations -> discovery
+per combination (continuing past individual failures) -> normalize ->
+deduplicate within the run -> persist-or-update itinerary (persistent
+dedup across runs, §19/Etap 4) -> filter by max stops -> select cheapest
+candidates -> verify up to MAX_OFFERS_TO_VERIFY -> record verification ->
+update price history -> check alert rules -> notify -> complete run.
+"""
 
 import asyncio
 import logging
@@ -8,10 +16,14 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.database import SessionLocal
-from app.db.models import FlightOffer, PersistedFlightSegment, PriceHistory, Search, SearchRun
+from app.db.models import Search, SearchRun
+from app.db.repositories import flights as flights_repo
+from app.db.repositories import runs as runs_repo
 from app.domain.enums import TicketType, VerificationStatus
 from app.domain.models import NormalizedFlightOffer
+from app.providers.discovery.base import FlightDiscoveryProvider
 from app.providers.discovery.google_flights import GoogleFlightsProvider
+from app.providers.discovery.mock import MockFlightDiscoveryProvider
 from app.services.date_generator import generate_date_combinations
 from app.services.deduplicator import deduplicate, itinerary_key
 from app.services.notification_service import notify_if_eligible
@@ -19,6 +31,12 @@ from app.services.verifier import FlightVerifier
 
 logger = logging.getLogger(__name__)
 _running_tasks: set[asyncio.Task] = set()
+
+
+def build_provider() -> FlightDiscoveryProvider:
+    if settings.discovery_provider == "mock":
+        return MockFlightDiscoveryProvider()
+    return GoogleFlightsProvider()
 
 
 def create_run(search_id: int) -> int:
@@ -59,6 +77,11 @@ def enqueue_run(search_id: int) -> int:
     return run_id
 
 
+def _http_status(exc: Exception) -> int | None:
+    response = getattr(exc, "response", None)
+    return getattr(response, "status_code", None)
+
+
 async def execute_run(run_id: int) -> None:
     session = SessionLocal()
     try:
@@ -71,6 +94,7 @@ async def execute_run(run_id: int) -> None:
             run.errors = "Search was deleted before execution."
             session.commit()
             return
+
         combinations = list(
             generate_date_combinations(
                 search.earliest_departure,
@@ -80,9 +104,9 @@ async def execute_run(run_id: int) -> None:
                 search.latest_return,
             )
         )
-        provider = GoogleFlightsProvider()
+        provider = build_provider()
         discovered = []
-        errors: list[str] = []
+        error_summaries: list[str] = []
         for departure, returning in combinations:
             run.current_query = f"{search.origin} → {search.destination}: {departure} → {returning}"
             session.commit()
@@ -90,60 +114,52 @@ async def execute_run(run_id: int) -> None:
                 discovered.extend(
                     await provider.search(search.origin, search.destination, departure, returning, search.currency)
                 )
-            except Exception as exc:  # Continue remaining combinations by design.
+            except Exception as exc:  # Continue remaining combinations by design (plan §32).
                 message = f"{departure} → {returning}: {type(exc).__name__}: {exc}"
                 logger.warning("provider_query_failed run_id=%s %s", run_id, message)
-                errors.append(message)
+                error_summaries.append(message)
+                runs_repo.record_provider_error(
+                    session,
+                    run_id=run.id,
+                    provider=getattr(provider, "name", "unknown"),
+                    origin=search.origin,
+                    destination=search.destination,
+                    departure_date=departure,
+                    return_date=returning,
+                    http_status=_http_status(exc),
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                session.commit()
             run.combinations_checked += 1
             session.commit()
 
         run.offers_found = len(discovered)
-        verification_candidates: list[tuple[FlightOffer, NormalizedFlightOffer]] = []
+        verification_candidates: list[tuple] = []
+        offers_new = 0
         for raw in deduplicate(discovered):
             if raw.stops > search.max_stops:
                 continue
             identity = itinerary_key(raw)
-            offer = FlightOffer(
-                search_run_id=run.id,
-                departure_date=raw.departure.date(),
-                return_date=raw.return_date,
-                trip_days=(raw.return_date - raw.departure.date()).days,
-                origin=raw.origin,
-                destination=raw.destination,
-                airline=raw.airlines[0] if raw.airlines else "Unknown airline",
-                price=raw.price,
-                currency=raw.currency,
-                total_duration_minutes=raw.duration_minutes,
-                stops=raw.stops,
-                stop_airports=",".join(segment.arrival_airport for segment in raw.segments[:-1]),
-                ticket_type=(TicketType.SELF_TRANSFER if raw.is_self_transfer else TicketType.UNKNOWN).value,
-                verification_status=VerificationStatus.DISCOVERED.value,
-                booking_source=None,
-                booking_url=raw.booking_url,
-                provider=raw.provider,
-                provider_offer_id=raw.provider_offer_id,
-                identity_key=identity,
-                route=" → ".join([raw.origin] + [segment.arrival_airport for segment in raw.segments]),
-            )
-            session.add(offer)
-            session.flush()
-            for position, segment in enumerate(raw.segments, start=1):
-                session.add(
-                    PersistedFlightSegment(
-                        flight_offer_id=offer.id,
-                        segment_number=position,
-                        direction="outbound" if position <= raw.outbound_segment_count else "return",
-                        flight_number=segment.flight_number,
-                        marketing_airline=segment.marketing_airline,
-                        operating_airline=segment.operating_airline,
-                        departure_airport=segment.departure_airport,
-                        arrival_airport=segment.arrival_airport,
-                        departure_time=segment.departure_time,
-                        arrival_time=segment.arrival_time,
-                        duration_minutes=segment.duration_minutes,
-                    )
+            ticket_type = (TicketType.SELF_TRANSFER if raw.is_self_transfer else TicketType.UNKNOWN).value
+
+            existing = flights_repo.get_by_identity(session, search.id, identity)
+            if existing is None:
+                offer = flights_repo.create_offer(
+                    session,
+                    search_id=search.id,
+                    run_id=run.id,
+                    identity_key=identity,
+                    raw=raw,
+                    ticket_type=ticket_type,
+                    verification_status=VerificationStatus.DISCOVERED.value,
                 )
-            session.add(PriceHistory(flight_offer_id=offer.id, price=raw.price, currency=raw.currency))
+                offers_new += 1
+            else:
+                offer = existing
+                flights_repo.refresh_offer(session, offer, run_id=run.id, raw=raw)
+            session.flush()
+
             verification_candidates.append(
                 (
                     offer,
@@ -154,6 +170,7 @@ async def execute_run(run_id: int) -> None:
                 )
             )
 
+        run.offers_new = offers_new
         verifier = FlightVerifier()
         for offer, normalized in sorted(verification_candidates, key=lambda candidate: candidate[0].price)[
             : settings.max_offers_to_verify
@@ -168,11 +185,12 @@ async def execute_run(run_id: int) -> None:
             try:
                 await notify_if_eligible(session, offer, search)
             except Exception as exc:
-                errors.append(f"notification offer={offer.id}: {type(exc).__name__}: {exc}")
+                error_summaries.append(f"notification offer={offer.id}: {type(exc).__name__}: {exc}")
+
         run.status = "completed"
         run.finished_at = datetime.now()
         run.current_query = ""
-        run.errors = "\n".join(errors)
+        run.errors = "\n".join(error_summaries)
         search.last_run_at = datetime.now()
         session.commit()
     except Exception as exc:

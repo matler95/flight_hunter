@@ -7,16 +7,24 @@ from decimal import Decimal
 from urllib.parse import urlencode
 
 from app.core.config import settings
+from app.db.database import SessionLocal
 from app.domain.enums import TicketType, VerificationStatus
 from app.domain.models import FlightSegment, RawFlightOffer, VerificationResult
 from app.providers.discovery.base import FlightDiscoveryProvider
+from app.services.airports import resolve_airports
 
 
 class ProviderUnavailableError(RuntimeError):
     """Raised when the local fli dependency or Google Flights is unavailable."""
 
 
-AIRPORT_GROUPS = {"TYO": ("HND", "NRT")}
+def _resolve_airport_group(code: str) -> tuple[str, ...]:
+    """Resolve a single airport or an airport group (e.g. TYO) via the database."""
+    session = SessionLocal()
+    try:
+        return tuple(resolve_airports(session, code))
+    finally:
+        session.close()
 
 
 class GoogleFlightsProvider(FlightDiscoveryProvider):
@@ -86,8 +94,8 @@ class GoogleFlightsProvider(FlightDiscoveryProvider):
         from fli.search import SearchFlights
 
         try:
-            origin_airports = [[Airport[code], 0] for code in AIRPORT_GROUPS.get(origin, (origin,))]
-            destination_airports = [[Airport[code], 0] for code in AIRPORT_GROUPS.get(destination, (destination,))]
+            origin_airports = [[Airport[code], 0] for code in _resolve_airport_group(origin)]
+            destination_airports = [[Airport[code], 0] for code in _resolve_airport_group(destination)]
         except KeyError as exc:
             raise ValueError(f"Unsupported IATA airport code: {exc.args[0]}") from exc
         filters = FlightSearchFilters(

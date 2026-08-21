@@ -1,1 +1,37 @@
-{% extends 'base.html' %}{% block content %}<div class='flex items-center justify-between mb-7'><div><h1 class='text-3xl font-bold'>Active searches</h1><p class='text-slate-500 mt-1'>Track flexible dates without buying tickets here.</p></div><a href='/searches/new' class='button'>New search</a></div>{% if searches %}<div class='grid gap-4 md:grid-cols-2'>{% for search in searches %}<article class='card'><div class='flex justify-between'><h2 class='font-semibold text-lg'>{{search.name}}</h2><span class='text-sm {{'text-emerald-700' if search.active else 'text-slate-400'}}'>{{'Active' if search.active else 'Paused'}}</span></div><p class='text-2xl font-medium mt-3'>{{search.origin}} → {{search.destination}}</p><p class='text-slate-500 mt-2'>{{search.earliest_departure}} – {{search.latest_departure}} · {{search.min_trip_days}}–{{search.max_trip_days}} days</p><p class='mt-4 font-semibold'>Target: {{search.target_price|money(search.currency)}}</p><div class='mt-5 flex gap-3'><a href='/searches/{{search.id}}' class='link'>View results</a><form method='post' action='/searches/{{search.id}}/toggle'><button class='link'>{{'Pause' if search.active else 'Resume'}}</button></form></div></article>{% endfor %}</div>{% else %}<div class='card text-center py-16'><p class='text-lg'>No searches yet.</p><a class='link inline-block mt-3' href='/searches/new'>Create your first search</a></div>{% endif %}{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<div class='flex items-center justify-between mb-7'>
+  <div><h1 class='text-3xl font-bold'>Active searches</h1><p class='text-slate-500 mt-1'>Track flexible dates without buying tickets here.</p></div>
+  <a href='/searches/new' class='button'>New search</a>
+</div>
+{% if cards %}
+<div class='grid gap-4 md:grid-cols-2'>
+{% for item in cards %}
+{% set search = item.search %}
+<article class='card'>
+  <div class='flex justify-between'>
+    <h2 class='font-semibold text-lg'>{{search.name}}</h2>
+    <span class='text-sm {{"text-emerald-700" if search.active else "text-slate-400"}}'>{{'Active' if search.active else 'Paused'}}</span>
+  </div>
+  <p class='text-2xl font-medium mt-3'>{{search.origin}} → {{search.destination}}</p>
+  <p class='text-slate-500 mt-2'>{{search.earliest_departure}} – {{search.latest_departure}} · {{search.min_trip_days}}–{{search.max_trip_days}} days</p>
+  <p class='mt-4 font-semibold'>Target: {{search.target_price|money(search.currency)}}</p>
+  {% if item.best_offer %}
+  <p class='mt-2 text-slate-600'>Best found: <strong>{{item.best_offer.price|money(item.best_offer.currency)}}</strong></p>
+  {% if item.target_reached %}<p class='mt-1 text-emerald-700 text-sm font-bold'>🟢 Target reached</p>{% endif %}
+  {% elif item.run and item.run.status == 'running' %}
+  <p class='mt-2 text-slate-500 text-sm'>Searching…</p>
+  {% else %}
+  <p class='mt-2 text-slate-400 text-sm'>No offers found yet.</p>
+  {% endif %}
+  {% if search.last_run_at %}<p class='mt-1 text-slate-400 text-xs'>Last checked: {{search.last_run_at.strftime('%d %b %Y %H:%M')}}</p>{% endif %}
+  <div class='mt-5 flex gap-3'>
+    <a href='/searches/{{search.id}}' class='link'>View results</a>
+    <form method='post' action='/searches/{{search.id}}/toggle'><button class='link'>{{'Pause' if search.active else 'Resume'}}</button></form>
+  </div>
+</article>
+{% endfor %}
+</div>
+{% else %}
+<div class='card text-center py-16'><p class='text-lg'>No searches yet.</p><a class='link inline-block mt-3' href='/searches/new'>Create your first search</a></div>
+{% endif %}
+{% endblock %}

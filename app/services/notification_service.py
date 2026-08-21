@@ -1,6 +1,7 @@
 from app.core.dates import format_duration
 from app.core.money import format_money
-from app.db.models import FlightOffer, Notification, Search
+from app.db.models import FlightOffer, Search
+from app.db.repositories import notifications as notifications_repo
 from app.domain.enums import TicketType, VerificationStatus
 from app.domain.rules import is_alertable
 from app.notifications.telegram import TelegramNotificationProvider
@@ -40,17 +41,9 @@ async def notify_if_eligible(session, offer: FlightOffer, search: Search) -> boo
     )
     if not eligible:
         return False
-    existing = (
-        session.query(Notification)
-        .filter_by(
-            flight_offer_id=offer.id,
-            notification_type=PRICE_TARGET_REACHED,
-            price=offer.price,
-        )
-        .first()
-    )
-    if existing:
+    if notifications_repo.already_sent(session, offer.id, PRICE_TARGET_REACHED, offer.price):
         return False
+    # Send before recording: a failed send (e.g. Telegram down) must not be marked as sent.
     await TelegramNotificationProvider().send_price_alert(price_alert_message(offer, search), offer.booking_url)
-    session.add(Notification(flight_offer_id=offer.id, notification_type=PRICE_TARGET_REACHED, price=offer.price))
+    notifications_repo.record_sent(session, offer.id, PRICE_TARGET_REACHED, offer.price)
     return True

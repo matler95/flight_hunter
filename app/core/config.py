@@ -9,8 +9,10 @@ class Settings(BaseSettings):
     provider_results_per_query: int = 10
     max_offers_to_verify: int = 10
     daily_search_hour: int = 8
+    discovery_provider: str = "google_flights"  # "google_flights" or "mock"
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    log_level: str = "INFO"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

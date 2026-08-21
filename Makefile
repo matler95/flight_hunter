@@ -8,4 +8,4 @@ lint:
 format:
 	uv run ruff format .
 migrate:
-	uv run python -c "from app.db.database import Base, engine; import app.db.models; Base.metadata.create_all(engine)"
+	uv run alembic upgrade head

@@ -14,7 +14,8 @@ class FlightVerifier:
     async def verify(self, offer: NormalizedFlightOffer, discovery_provider=None):
         verify_booking_option = getattr(discovery_provider, "verify_booking_option", None)
         if verify_booking_option is not None:
-            return await verify_booking_option(offer.provider_offer_id)
+            result = await verify_booking_option(offer.provider_offer_id)
+            return result.status, result.ticket_type, result.booking_source, result.booking_url
         verifier = self.verifier_for(offer)
         if verifier is None:
             return VerificationStatus.UNKNOWN, TicketType.UNKNOWN, None, None
