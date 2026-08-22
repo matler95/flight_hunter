@@ -10,6 +10,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.urls import ensure_absolute_url
 from app.db.models import FlightOffer, PersistedFlightSegment, PriceHistory
 from app.domain.models import RawFlightOffer
 
@@ -58,7 +59,7 @@ def create_offer(
         ticket_type=ticket_type,
         verification_status=verification_status,
         booking_source=None,
-        booking_url=raw.booking_url,
+        booking_url=ensure_absolute_url(raw.booking_url),
         provider=raw.provider,
         provider_offer_id=raw.provider_offer_id,
         identity_key=identity_key,
@@ -94,24 +95,9 @@ def refresh_offer(session: Session, offer: FlightOffer, *, run_id: int, raw: Raw
     offer.currency = raw.currency
     offer.total_duration_minutes = raw.duration_minutes
     offer.provider_offer_id = raw.provider_offer_id
-    offer.booking_url = raw.booking_url or offer.booking_url
+    offer.booking_url = ensure_absolute_url(raw.booking_url) or offer.booking_url
     record_price(session, offer, raw.price, raw.currency, run_id)
 
 
 def record_price(session: Session, offer: FlightOffer, price, currency: str, run_id: int) -> None:
-    """Append a price-history row, but only when the price actually changed.
-
-    Re-checking an itinerary that hasn't moved in price would otherwise log
-    an identical row every run; skipping those keeps the history meaningful
-    (only real price movements) instead of duplicate noise.
-    """
-    latest = session.scalar(
-        select(PriceHistory)
-        .where(PriceHistory.flight_offer_id == offer.id)
-        .order_by(PriceHistory.checked_at.desc(), PriceHistory.id.desc())
-        .limit(1)
-    )
-    if latest is not None and latest.price == price and latest.currency == currency:
-        return
     session.add(PriceHistory(flight_offer_id=offer.id, price=price, currency=currency, search_run_id=run_id))
-    session.flush()

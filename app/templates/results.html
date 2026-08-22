@@ -8,11 +8,17 @@
   <form method='post' action='/searches/{{search.id}}/run'><button class='button'>Run again</button></form>
 </div>
 {% include 'components/search_progress.html' %}
-<div class='mt-6 flex items-center gap-3 text-sm'>
+<div class='mt-6 flex flex-wrap items-center gap-3 text-sm'>
   <span class='text-slate-500'>Sort by</span>
   {% for key, label in [('price','Price'), ('duration','Duration'), ('departure','Departure'), ('stops','Stops')] %}
-  <a href='/searches/{{search.id}}/results?sort={{key}}' class='{{"font-bold text-teal-700" if sort==key else "link"}}'>{{label}}</a>
+  <a href='/searches/{{search.id}}/results?sort={{key}}{{"&hide_above_target=1" if hide_above_target else ""}}' class='{{"font-bold text-teal-700" if sort==key else "link"}}'>{{label}}</a>
   {% endfor %}
+  <span class='text-slate-300'>|</span>
+  {% if hide_above_target %}
+  <a class='link' href='/searches/{{search.id}}/results?sort={{sort}}&hide_above_target=0'>Show all offers</a>
+  {% else %}
+  <a class='link' href='/searches/{{search.id}}/results?sort={{sort}}&hide_above_target=1'>Hide offers above target</a>
+  {% endif %}
 </div>
 <section class='mt-4 grid gap-4'>
 {% for offer in offers %}

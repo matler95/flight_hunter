@@ -16,13 +16,13 @@ from app.api import history as history_api
 from app.api import searches as searches_api
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.core.urls import ensure_absolute_url
 from app.db.database import SessionLocal
 from app.db.models import FlightOffer, Search, SearchRun
 from app.domain.enums import TicketType, VerificationStatus
 from app.domain.rules import is_alertable
 from app.scheduler.scheduler import start_scheduler, stop_scheduler, sync_daily_jobs
 from app.services import airports
-from app.services.history_grouping import group_offers_by_period
 from app.services.search_engine import enqueue_run
 
 SORT_OPTIONS = {
@@ -30,6 +30,10 @@ SORT_OPTIONS = {
     "duration": (FlightOffer.total_duration_minutes, FlightOffer.price),
     "departure": (FlightOffer.departure_date, FlightOffer.price),
     "stops": (FlightOffer.stops, FlightOffer.price),
+}
+HISTORY_SORT_OPTIONS = {
+    "recent": (FlightOffer.last_seen_at.desc(), FlightOffer.id.desc()),
+    **SORT_OPTIONS,
 }
 
 
@@ -52,6 +56,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["money"] = lambda value, currency: f"{value:,.0f} {currency}".replace(",", " ")
 templates.env.filters["duration"] = lambda minutes: f"{minutes // 60}h {minutes % 60:02d}m"
+templates.env.filters["abs_url"] = ensure_absolute_url
 
 
 def db():
@@ -163,7 +168,7 @@ def _latest_run(session, search_id: int) -> SearchRun | None:
 
 @app.get("/searches/{search_id}", response_class=HTMLResponse)
 @app.get("/searches/{search_id}/results", response_class=HTMLResponse)
-def results(request: Request, search_id: int, sort: str = "price"):
+def results(request: Request, search_id: int, sort: str = "price", hide_above_target: bool = False):
     session, item = get_search(search_id)
     run = _latest_run(session, search_id)
     order_by = SORT_OPTIONS.get(sort, SORT_OPTIONS["price"])
@@ -176,6 +181,8 @@ def results(request: Request, search_id: int, sort: str = "price"):
             .order_by(*order_by)
         ).all()
     )
+    if hide_above_target:
+        offers = [o for o in offers if o.price <= item.target_price]
     for offer in offers:
         # UI must never show "below target" for a merely-discovered price (plan §50):
         # only a verified, single-ticket, in-stops-budget offer counts.
@@ -188,7 +195,9 @@ def results(request: Request, search_id: int, sort: str = "price"):
             VerificationStatus(offer.verification_status),
         )
     return templates.TemplateResponse(
-        request, "results.html", {"search": item, "run": run, "offers": offers, "sort": sort}
+        request,
+        "results.html",
+        {"search": item, "run": run, "offers": offers, "sort": sort, "hide_above_target": hide_above_target},
     )
 
 
@@ -226,9 +235,12 @@ def history(
     stops: int | None = None,
     min_price: Decimal | None = None,
     max_price: Decimal | None = None,
+    above_target: str | None = None,
+    sort: str = "recent",
 ):
     session = db()
-    query = select(FlightOffer).order_by(FlightOffer.id.desc())
+    order_by = HISTORY_SORT_OPTIONS.get(sort, HISTORY_SORT_OPTIONS["recent"])
+    query = select(FlightOffer).join(Search, FlightOffer.search_id == Search.id).order_by(*order_by)
     if search_id:
         query = query.where(FlightOffer.search_id == search_id)
     if airline:
@@ -241,16 +253,19 @@ def history(
         query = query.where(FlightOffer.price >= min_price)
     if max_price is not None:
         query = query.where(FlightOffer.price <= max_price)
+    if above_target == "hide":
+        # Each offer's own search may have a different target_price, so this
+        # has to compare against the search it belongs to, not a single value.
+        query = query.where(FlightOffer.price <= Search.target_price)
     offers = session.scalars(query).all()
-    groups = group_offers_by_period(offers)
     airlines = sorted({row[0] for row in session.execute(select(FlightOffer.airline).distinct())})
     return templates.TemplateResponse(
         request,
         "history.html",
         {
             "offers": offers,
-            "groups": groups,
             "airlines": airlines,
+            "sort": sort,
             "filters": {
                 "search_id": search_id,
                 "airline": airline,
@@ -258,6 +273,7 @@ def history(
                 "stops": stops,
                 "min_price": min_price,
                 "max_price": max_price,
+                "above_target": above_target,
             },
         },
     )

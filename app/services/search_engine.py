@@ -15,6 +15,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.urls import ensure_absolute_url
 from app.db.database import SessionLocal
 from app.db.models import Search, SearchRun
 from app.db.repositories import flights as flights_repo
@@ -180,7 +181,7 @@ async def execute_run(run_id: int) -> None:
             offer.ticket_type = ticket_type.value
             offer.booking_source = booking_source
             if booking_url:
-                offer.booking_url = booking_url
+                offer.booking_url = ensure_absolute_url(booking_url)
             run.offers_verified += int(status is VerificationStatus.VERIFIED)
             try:
                 await notify_if_eligible(session, offer, search)
