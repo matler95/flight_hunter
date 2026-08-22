@@ -2,7 +2,7 @@
 
 Encapsulates the persistent-dedup rule: the same itinerary (identity_key)
 for the same search is always one `FlightOffer` row, updated in place, with
-one new `PriceHistory` row appended on every check.
+one `PriceHistory` row appended when its price or currency changes.
 """
 
 from datetime import datetime
@@ -100,4 +100,13 @@ def refresh_offer(session: Session, offer: FlightOffer, *, run_id: int, raw: Raw
 
 
 def record_price(session: Session, offer: FlightOffer, price, currency: str, run_id: int) -> None:
+    latest = session.scalar(
+        select(PriceHistory)
+        .where(PriceHistory.flight_offer_id == offer.id)
+        .order_by(PriceHistory.checked_at.desc(), PriceHistory.id.desc())
+        .limit(1)
+    )
+    if latest is not None and latest.price == price and latest.currency == currency:
+        return
     session.add(PriceHistory(flight_offer_id=offer.id, price=price, currency=currency, search_run_id=run_id))
+    session.flush()

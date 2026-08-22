@@ -1,6 +1,9 @@
 {% extends 'base.html' %}{% block content %}
 <h1 class='text-3xl font-bold mb-7'>History</h1>
-<form method='get' action='/history' class='card mb-5 grid gap-3 md:grid-cols-6 items-end text-sm'>
+<div class='card mb-5 text-sm'>
+<form method='get' action='/history' class='grid gap-3 md:grid-cols-5 items-end'>
+  {% if filters.search_id is not none %}<input type='hidden' name='search_id' value='{{filters.search_id}}'>{% endif %}
+  <input type='hidden' name='sort' value='{{sort}}'>
   <label>Airline<select name='airline'>
     <option value=''>All</option>
     {% for a in airlines %}<option value='{{a}}' {{'selected' if filters.airline==a else ''}}>{{a}}</option>{% endfor %}
@@ -12,31 +15,58 @@
   <label>Stops<input type='number' name='stops' min='0' value='{{filters.stops if filters.stops is not none else ""}}'></label>
   <label>Min price<input type='number' name='min_price' value='{{filters.min_price if filters.min_price is not none else ""}}'></label>
   <label>Max price<input type='number' name='max_price' value='{{filters.max_price if filters.max_price is not none else ""}}'></label>
+  <label class='flex items-center gap-2 md:col-span-2'><input type='checkbox' name='above_target' value='hide' {{'checked' if filters.above_target=='hide' else ''}}> Hide offers above target price</label>
+  <button class='button md:col-span-3 justify-self-start'>Apply filters</button>
+</form>
+<form method='get' action='/history' class='mt-4 flex flex-wrap items-end gap-3'>
+  {% if filters.search_id is not none %}<input type='hidden' name='search_id' value='{{filters.search_id}}'>{% endif %}
+  {% if filters.airline %}<input type='hidden' name='airline' value='{{filters.airline}}'>{% endif %}
+  {% if filters.status %}<input type='hidden' name='status' value='{{filters.status}}'>{% endif %}
+  {% if filters.stops is not none %}<input type='hidden' name='stops' value='{{filters.stops}}'>{% endif %}
+  {% if filters.min_price is not none %}<input type='hidden' name='min_price' value='{{filters.min_price}}'>{% endif %}
+  {% if filters.max_price is not none %}<input type='hidden' name='max_price' value='{{filters.max_price}}'>{% endif %}
+  {% if filters.above_target == 'hide' %}<input type='hidden' name='above_target' value='hide'>{% endif %}
   <label>Sort by<select name='sort'>
     {% for key, label in [('recent','Most recent'), ('price','Price'), ('duration','Duration'), ('departure','Departure'), ('stops','Stops')] %}
     <option value='{{key}}' {{'selected' if sort==key else ''}}>{{label}}</option>
     {% endfor %}
   </select></label>
-  <label class='flex items-center gap-2 md:col-span-2'><input type='checkbox' name='above_target' value='hide' {{'checked' if filters.above_target=='hide' else ''}}> Hide offers above target price</label>
-  <button class='button md:col-span-4 justify-self-start'>Apply filters</button>
+  <button class='button'>Apply sort</button>
 </form>
-<div class='card overflow-x-auto'>
-<table class='w-full text-sm'>
-<thead><tr class='text-left text-slate-500 border-b'><th>Departure</th><th>Return</th><th>Airline / route</th><th>Stops</th><th>Price</th><th>Status</th></tr></thead>
-<tbody>
-{% for offer in offers %}
-<tr class='border-b last:border-0'>
-  <td>{{offer.departure_date}}</td>
-  <td>{{offer.return_date}}</td>
-  <td><a class='link' href='/flights/{{offer.id}}'>{{offer.airline}}</a><br><span class='text-slate-500'>{{offer.route}}</span></td>
-  <td>{{offer.stops}}</td>
-  <td>{{offer.price|money(offer.currency)}}</td>
-  <td><span class='badge {{"verified" if offer.verification_status=="verified" else "unknown"}}'>{{offer.verification_status}}</span></td>
-</tr>
+</div>
+<div class='card divide-y'>
+{% for group in groups %}
+<details class='group-block'>
+  <summary>
+    <span class='group-summary-main'>
+      <span class='font-semibold'>{{group.departure_date}} → {{group.return_date}}</span>
+      <span class='text-slate-500'>{{group.origin}} → {{group.destination}}</span>
+    </span>
+    <span class='group-summary-side'>
+      <a class='link' href='/flights/{{group.cheapest.id}}'>{{group.cheapest.airline}}</a>
+      <span class='font-bold'>{{group.cheapest.price|money(group.cheapest.currency)}}</span>
+      <span class='badge {{"verified" if group.cheapest.verification_status=="verified" else "unknown"}}'>{{group.cheapest.verification_status}}</span>
+      {% if group.more_count > 0 %}<span class='text-slate-500 text-sm'>+{{group.more_count}} more</span>{% endif %}
+    </span>
+  </summary>
+  {% if group.more_count > 0 %}
+  <table class='w-full text-sm mt-3'>
+  <thead><tr class='text-left text-slate-500 border-b'><th>Airline / route</th><th>Stops</th><th>Price</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for offer in group.offers %}
+  <tr class='border-b last:border-0'>
+    <td><a class='link' href='/flights/{{offer.id}}'>{{offer.airline}}</a><br><span class='text-slate-500'>{{offer.route}}</span></td>
+    <td>{{offer.stops}}</td>
+    <td>{{offer.price|money(offer.currency)}}</td>
+    <td><span class='badge {{"verified" if offer.verification_status=="verified" else "unknown"}}'>{{offer.verification_status}}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+  </table>
+  {% endif %}
+</details>
 {% else %}
-<tr><td colspan='6' class='text-slate-500 py-6 text-center'>No offers match these filters.</td></tr>
+<p class='text-slate-500 py-6 text-center'>No offers match these filters.</p>
 {% endfor %}
-</tbody>
-</table>
 </div>
 {% endblock %}
