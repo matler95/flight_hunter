@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
+from app.api import airports as airports_api
 from app.api import flights as flights_api
 from app.api import health as health_api
 from app.api import history as history_api
@@ -20,6 +21,7 @@ from app.db.models import FlightOffer, Search, SearchRun
 from app.domain.enums import TicketType, VerificationStatus
 from app.domain.rules import is_alertable
 from app.scheduler.scheduler import start_scheduler, stop_scheduler, sync_daily_jobs
+from app.services import airports
 from app.services.search_engine import enqueue_run
 
 SORT_OPTIONS = {
@@ -44,6 +46,7 @@ app.include_router(health_api.router, prefix="/api")
 app.include_router(searches_api.router, prefix="/api")
 app.include_router(flights_api.router, prefix="/api")
 app.include_router(history_api.router, prefix="/api")
+app.include_router(airports_api.router, prefix="/api")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["money"] = lambda value, currency: f"{value:,.0f} {currency}".replace(",", " ")
@@ -94,7 +97,17 @@ def dashboard(request: Request):
 
 @app.get("/searches/new", response_class=HTMLResponse)
 def new_search(request: Request):
-    return templates.TemplateResponse(request, "search_form.html", {})
+    session = db()
+    try:
+        defaults = {
+            "origin_code": "WAW",
+            "origin_label": airports.describe(session, "WAW"),
+            "destination_code": "TYO",
+            "destination_label": airports.describe(session, "TYO"),
+        }
+    finally:
+        session.close()
+    return templates.TemplateResponse(request, "search_form.html", defaults)
 
 
 @app.post("/searches")

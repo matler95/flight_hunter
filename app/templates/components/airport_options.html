@@ -1,0 +1,14 @@
+{% if suggestions %}
+<div class='dropdown-panel'>
+{% for s in suggestions %}
+<button type='button' class='dropdown-item' onmousedown="event.preventDefault(); selectAirport('{{field}}', '{{s.code}}', '{{s.label|e}}')">
+  <span class='dropdown-item-label'>{{s.label}}</span>
+  <span class='dropdown-item-detail'>{{s.detail}}{% if s.is_group %} · group{% endif %}</span>
+</button>
+{% endfor %}
+</div>
+{% elif query %}
+<div class='dropdown-panel'>
+  <div class='dropdown-empty'>No airports match "{{query}}"</div>
+</div>
+{% endif %}
