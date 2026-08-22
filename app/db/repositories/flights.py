@@ -99,4 +99,19 @@ def refresh_offer(session: Session, offer: FlightOffer, *, run_id: int, raw: Raw
 
 
 def record_price(session: Session, offer: FlightOffer, price, currency: str, run_id: int) -> None:
+    """Append a price-history row, but only when the price actually changed.
+
+    Re-checking an itinerary that hasn't moved in price would otherwise log
+    an identical row every run; skipping those keeps the history meaningful
+    (only real price movements) instead of duplicate noise.
+    """
+    latest = session.scalar(
+        select(PriceHistory)
+        .where(PriceHistory.flight_offer_id == offer.id)
+        .order_by(PriceHistory.checked_at.desc(), PriceHistory.id.desc())
+        .limit(1)
+    )
+    if latest is not None and latest.price == price and latest.currency == currency:
+        return
     session.add(PriceHistory(flight_offer_id=offer.id, price=price, currency=currency, search_run_id=run_id))
+    session.flush()

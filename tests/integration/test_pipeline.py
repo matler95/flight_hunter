@@ -126,8 +126,10 @@ async def test_persistent_dedup_across_runs_updates_instead_of_duplicating(sessi
     offers = session.query(FlightOffer).all()
     # Same itineraries found again: no duplicate rows...
     assert len(offers) == 45
-    # ...but a price-history row was appended for every one of them.
-    assert session.query(PriceHistory).count() == 90
+    # ...and since the mock provider returns identical prices on both runs,
+    # no new price-history rows are appended either (no point logging a
+    # "price change" to the same price).
+    assert session.query(PriceHistory).count() == 45
     # Identity is stable and first_seen_at does not move.
     for offer in offers:
         assert offer.first_seen_at == first_seen[offer.id]

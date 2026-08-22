@@ -22,6 +22,7 @@ from app.domain.enums import TicketType, VerificationStatus
 from app.domain.rules import is_alertable
 from app.scheduler.scheduler import start_scheduler, stop_scheduler, sync_daily_jobs
 from app.services import airports
+from app.services.history_grouping import group_offers_by_period
 from app.services.search_engine import enqueue_run
 
 SORT_OPTIONS = {
@@ -241,12 +242,14 @@ def history(
     if max_price is not None:
         query = query.where(FlightOffer.price <= max_price)
     offers = session.scalars(query).all()
+    groups = group_offers_by_period(offers)
     airlines = sorted({row[0] for row in session.execute(select(FlightOffer.airline).distinct())})
     return templates.TemplateResponse(
         request,
         "history.html",
         {
             "offers": offers,
+            "groups": groups,
             "airlines": airlines,
             "filters": {
                 "search_id": search_id,

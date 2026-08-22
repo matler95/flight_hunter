@@ -6,3 +6,10 @@ label{display:grid;gap:.3rem;font-size:.875rem;font-weight:600}input,select{bord
 .dropdown-item-label{font-weight:600;font-size:.9rem;color:#0f172a}
 .dropdown-item-detail{font-size:.78rem;color:#64748b}
 .dropdown-empty{padding:.6rem .7rem;font-size:.85rem;color:#94a3b8}
+.group-block{padding:.85rem 0}
+.group-block>summary{display:flex;justify-content:space-between;align-items:center;gap:1rem;cursor:pointer;list-style:none}
+.group-block>summary::-webkit-details-marker{display:none}
+.group-block>summary::before{content:'▸';display:inline-block;margin-right:.5rem;color:#94a3b8;transition:transform .15s}
+.group-block[open]>summary::before{transform:rotate(90deg)}
+.group-summary-main{display:flex;flex-direction:column;gap:.15rem}
+.group-summary-side{display:flex;align-items:center;gap:.75rem;white-space:nowrap}
