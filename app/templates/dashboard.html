@@ -27,6 +27,10 @@
   <div class='mt-5 flex gap-3'>
     <a href='/searches/{{search.id}}' class='link'>View results</a>
     <form method='post' action='/searches/{{search.id}}/toggle'><button class='link'>{{'Pause' if search.active else 'Resume'}}</button></form>
+    <form method='post' action='/searches/{{search.id}}/delete' onsubmit="return confirm('Remove this search? Select OK to remove the search only, or cancel to keep it.')">
+      <label class='text-sm text-red-700'><input type='checkbox' name='delete_results' value='true'> Delete history/results too</label>
+      <button class='link text-red-700' type='submit'>Remove</button>
+    </form>
   </div>
 </article>
 {% endfor %}

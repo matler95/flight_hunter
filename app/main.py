@@ -217,13 +217,45 @@ def toggle(search_id: int):
     return RedirectResponse("/", 303)
 
 
-@app.delete("/searches/{search_id}")
-def delete(search_id: int):
+def _delete_search(search_id: int, delete_results: bool = False):
     session, item = get_search(search_id)
+    if not delete_results and session.scalar(
+        select(FlightOffer.id).where(FlightOffer.search_id == search_id).limit(1)
+    ) is not None:
+        session.close()
+        raise HTTPException(
+            409,
+            "This search has history. Set delete_results=true to remove its results too.",
+        )
     session.delete(item)
     session.commit()
     sync_daily_jobs()
+
+
+@app.post("/searches/{search_id}/delete")
+def delete_search_from_ui(search_id: int, delete_results: bool = Form(False)):
+    _delete_search(search_id, delete_results)
+    return RedirectResponse("/", 303)
+
+
+@app.delete("/searches/{search_id}")
+def delete(search_id: int, delete_results: bool = False):
+    _delete_search(search_id, delete_results)
     return {"status": "ok", "data": {}}
+
+
+@app.post("/history/delete")
+def delete_history_items(request: Request, offer_ids: list[int] = Form(default=[])):
+    session = db()
+    try:
+        for offer_id in set(offer_ids):
+            offer = session.get(FlightOffer, offer_id)
+            if offer is not None:
+                session.delete(offer)
+        session.commit()
+    finally:
+        session.close()
+    return RedirectResponse(request.headers.get("referer") or "/history", 303)
 
 
 @app.get("/searches/{search_id}/history", response_class=HTMLResponse)

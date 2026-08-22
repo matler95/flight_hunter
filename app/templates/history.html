@@ -34,12 +34,13 @@
   <button class='button'>Apply sort</button>
 </form>
 </div>
+<form method='post' action='/history/delete' onsubmit="return confirm('Delete selected history items?')">
 <div class='card divide-y'>
 {% for group in groups %}
 <details class='group-block'>
   <summary>
     <span class='group-summary-main'>
-      <span class='font-semibold'>{{group.departure_date}} → {{group.return_date}}</span>
+      <span class='font-semibold'><input type='checkbox' name='offer_ids' value='{{group.cheapest.id}}'> {{group.departure_date}} → {{group.return_date}}</span>
       <span class='text-slate-500'>{{group.origin}} → {{group.destination}}</span>
     </span>
     <span class='group-summary-side'>
@@ -47,6 +48,7 @@
       <span class='font-bold'>{{group.cheapest.price|money(group.cheapest.currency)}}</span>
       <span class='badge {{"verified" if group.cheapest.verification_status=="verified" else "unknown"}}'>{{group.cheapest.verification_status}}</span>
       {% if group.more_count > 0 %}<span class='text-slate-500 text-sm'>+{{group.more_count}} more</span>{% endif %}
+      <button class='link text-red-700' type='submit' name='offer_ids' value='{{group.cheapest.id}}' onclick="event.stopPropagation(); return confirm('Delete this history item?')">Delete</button>
     </span>
   </summary>
   {% if group.more_count > 0 %}
@@ -54,12 +56,14 @@
   <thead><tr class='text-left text-slate-500 border-b'><th>Airline / route</th><th>Stops</th><th>Price</th><th>Status</th></tr></thead>
   <tbody>
   {% for offer in group.offers %}
+  {% if offer.id != group.cheapest.id %}
   <tr class='border-b last:border-0'>
-    <td><a class='link' href='/flights/{{offer.id}}'>{{offer.airline}}</a><br><span class='text-slate-500'>{{offer.route}}</span></td>
+    <td><input type='checkbox' name='offer_ids' value='{{offer.id}}'> <a class='link' href='/flights/{{offer.id}}'>{{offer.airline}}</a><br><span class='text-slate-500'>{{offer.route}}</span> <button class='link text-red-700' type='submit' name='offer_ids' value='{{offer.id}}' onclick="return confirm('Delete this history item?')">Delete</button></td>
     <td>{{offer.stops}}</td>
     <td>{{offer.price|money(offer.currency)}}</td>
     <td><span class='badge {{"verified" if offer.verification_status=="verified" else "unknown"}}'>{{offer.verification_status}}</span></td>
   </tr>
+  {% endif %}
   {% endfor %}
   </tbody>
   </table>
@@ -69,4 +73,6 @@
 <p class='text-slate-500 py-6 text-center'>No offers match these filters.</p>
 {% endfor %}
 </div>
+<button class='button mt-4' type='submit'>Delete selected</button>
+</form>
 {% endblock %}
